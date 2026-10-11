@@ -1,10 +1,15 @@
-import pytest
-from parser_app.extractor import PDFExtractor
-from parser_app.artifact_schema import (
-    LayoutArtifact, ExtractionRule, TableDefinition, ColumnDefinition
-)
-from parser_app.parser_engine import DeterministicParser
 from decimal import Decimal
+
+import pytest
+
+from parser_app.artifact_schema import (
+    ColumnDefinition,
+    ExtractionRule,
+    LayoutArtifact,
+    TableDefinition,
+)
+from parser_app.extractor import PDFExtractor
+from parser_app.parser_engine import DeterministicParser
 
 VALID_PDF = "tests/fixtures/raw_pdfs/alpha_wealth.pdf"
 

@@ -1,13 +1,22 @@
 import re
 from decimal import Decimal
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
-from parser_app.schema import (
-    ParsedStatement, StatementContext, Summary, Holding, Transaction, Provenance, 
-    ValidationResult, ValidationStatus
-)
 from parser_app.artifact_schema import (
-    LayoutArtifact, ExtractionRule, TableDefinition, ColumnDefinition
+    ColumnDefinition,
+    ExtractionRule,
+    LayoutArtifact,
+    TableDefinition,
+)
+from parser_app.schema import (
+    Holding,
+    ParsedStatement,
+    Provenance,
+    StatementContext,
+    Summary,
+    Transaction,
+    ValidationResult,
+    ValidationStatus,
 )
 
 
