@@ -1,12 +1,12 @@
-from typing import List, Dict, Any, Tuple
 import logging
+from typing import Any, Dict, List, Tuple
 
-from parser_app.schema import ParsedStatement, ValidationStatus
-from parser_app.artifact_schema import LayoutArtifact
 from parser_app.artifact_repository import ArtifactRepository, ArtifactStatus
-from parser_app.fingerprinter import LayoutFingerprinter, LayoutSignature, FingerprintMatch
-from parser_app.llm_client import LLMClient, LearningRequest, LLMError
+from parser_app.artifact_schema import LayoutArtifact
+from parser_app.fingerprinter import LayoutFingerprinter, LayoutSignature
+from parser_app.llm_client import LearningRequest, LLMClient, LLMError
 from parser_app.parser_engine import DeterministicParser
+from parser_app.schema import ParsedStatement, ValidationStatus
 from parser_app.validator import FinancialValidator
 
 logger = logging.getLogger(__name__)
@@ -103,7 +103,7 @@ class LearningOrchestrator:
             conn.commit()
 
     def _create_quarantined_stub(self, source_hash: str, sig: LayoutSignature) -> ParsedStatement:
-        from parser_app.schema import StatementContext, Summary, Provenance, ValidationResult
+        from parser_app.schema import Provenance, StatementContext, Summary, ValidationResult
         return ParsedStatement(
             statement_id=f"QUAR-{source_hash[:8]}",
             context=StatementContext(provider_name="Unknown", strategy_name="N/A", client_identifier="N/A", statement_period="N/A"),
