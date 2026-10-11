@@ -1,0 +1,45 @@
+{
+  "statement_id": "RAW-ALPHA-01",
+  "context": {
+    "provider_name": "AlphaWealth",
+    "strategy_name": "Standard PMS",
+    "client_identifier": "CLIENT-A01",
+    "statement_period": "Oct 2026",
+    "currency": "INR"
+  },
+  "summary": {
+    "opening_value": "1000000.00",
+    "closing_value": "1050000.00",
+    "cash_balance": "50000.00",
+    "fees_charged": null,
+    "nav_per_unit": null
+  },
+  "holdings": [
+    {
+      "security_name": "Reliance Ind",
+      "isin": "INE002A01018",
+      "quantity": "200",
+      "cost": "2500.00",
+      "market_value": "510000.00",
+      "weight": "48.57"
+    },
+    {
+      "security_name": "HDFC Bank",
+      "isin": "INE040A01034",
+      "quantity": "300",
+      "cost": "1500.00",
+      "market_value": "490000.00",
+      "weight": "46.67"
+    }
+  ],
+  "transactions": [],
+  "provenance": {
+    "source_hash": "placeholder",
+    "layout_fingerprint": "alpha_layout_v1",
+    "artifact_version": "1.0.0"
+  },
+  "validation": {
+    "status": "PASS",
+    "details": "Validated manually"
+  }
+}

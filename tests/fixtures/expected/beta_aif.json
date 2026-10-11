@@ -1,0 +1,37 @@
+{
+  "statement_id": "RAW-BETA-01",
+  "context": {
+    "provider_name": "Beta AIF",
+    "strategy_name": "Alternative Fund",
+    "client_identifier": "B-992",
+    "statement_period": "October 26",
+    "currency": "INR"
+  },
+  "summary": {
+    "opening_value": "5000000.00",
+    "closing_value": "5200000.00",
+    "cash_balance": "200000.00",
+    "fees_charged": null,
+    "nav_per_unit": "10.40"
+  },
+  "holdings": [
+    {
+      "security_name": "Tech Startup Fund",
+      "isin": null,
+      "quantity": "500000",
+      "cost": "10.00",
+      "market_value": "5000000.00",
+      "weight": "96.15"
+    }
+  ],
+  "transactions": [],
+  "provenance": {
+    "source_hash": "placeholder",
+    "layout_fingerprint": "beta_layout_v1",
+    "artifact_version": "1.0.0"
+  },
+  "validation": {
+    "status": "PASS",
+    "details": "Validated manually"
+  }
+}

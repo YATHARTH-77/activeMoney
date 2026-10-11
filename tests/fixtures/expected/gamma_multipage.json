@@ -1,0 +1,50 @@
+{
+  "statement_id": "RAW-GAMMA-01",
+  "context": {
+    "provider_name": "Gamma Capital",
+    "strategy_name": "Multi-Strategy",
+    "client_identifier": "GC-777",
+    "statement_period": "Unknown",
+    "currency": "INR"
+  },
+  "summary": {
+    "opening_value": "100.00",
+    "closing_value": "150.00",
+    "cash_balance": "0.00",
+    "fees_charged": null,
+    "nav_per_unit": null
+  },
+  "holdings": [],
+  "transactions": [
+    {
+      "date": "2026-10-01",
+      "transaction_type": "buy",
+      "security": "TCS",
+      "quantity": "10",
+      "amount": "40000.00"
+    },
+    {
+      "date": "2026-10-05",
+      "transaction_type": "dividend",
+      "security": "TCS",
+      "quantity": null,
+      "amount": "150.00"
+    },
+    {
+      "date": "2026-10-10",
+      "transaction_type": "fee",
+      "security": "Mgmt",
+      "quantity": null,
+      "amount": "-50.00"
+    }
+  ],
+  "provenance": {
+    "source_hash": "placeholder",
+    "layout_fingerprint": "gamma_layout_v1",
+    "artifact_version": "1.0.0"
+  },
+  "validation": {
+    "status": "PASS",
+    "details": "Validated manually"
+  }
+}
