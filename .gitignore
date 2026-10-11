@@ -1,0 +1,23 @@
+# Environments
+venv/
+env/
+.env
+
+# Python caching
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+
+# Databases and Secrets
+*.sqlite3
+*.db
+secrets.json
+
+# PDF and Statement Data (Security/Privacy compliance)
+*.pdf
+*.csv
+*.xlsx
+data/raw/
+data/output/
