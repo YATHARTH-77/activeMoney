@@ -25,21 +25,37 @@ class LearningOrchestrator:
         if active_artifact:
             return self._parse_and_validate(pdf_pages, active_artifact, source_hash), False
             
-        logger.info(f"Unknown layout detected: {signature.fingerprint_hash}. Initiating learning...")
-        learned_artifact = self._execute_learning_loop(pdf_pages, signature)
+        # NEW: DRIFT DETECTION
+        # The exact hash failed. Check if this is a known provider who just changed their layout.
+        drift_provider = self._detect_drift_provider(pdf_pages[0]["text"])
+        
+        if drift_provider:
+            logger.info(f"Layout DRIFT detected for known provider: {drift_provider}. Triggering recovery learning...")
+        else:
+            logger.info(f"Unknown layout detected: {signature.fingerprint_hash}. Initiating learning...")
+            
+        learned_artifact = self._execute_learning_loop(pdf_pages, signature, drift_provider)
         
         if not learned_artifact:
             return self._create_quarantined_stub(source_hash, signature), True
             
         return self._parse_and_validate(pdf_pages, learned_artifact, source_hash), True
 
+    def _detect_drift_provider(self, pdf_text: str) -> str | None:
+        """Scans the PDF text to see if it matches the name of any known active provider."""
+        all_active = self.repo.get_all_active_artifacts()
+        pdf_text_lower = pdf_text.lower()
+        for art in all_active:
+            # If the provider name (e.g., "AlphaWealth") is heavily featured in the document, it's a drift
+            if art.provider_name.lower() in pdf_text_lower and art.provider_name != "Unknown":
+                return art.provider_name
+        return None
+
     def _execute_learning_loop(
-        self, pdf_pages: List[Dict[str, Any]], signature: LayoutSignature
+        self, pdf_pages: List[Dict[str, Any]], signature: LayoutSignature, provider_hint: str = None
     ) -> LayoutArtifact | None:
         first_page_words = pdf_pages[0].get("words", [])
         spatial_lines = []
-        
-        # FIX: Increased from 250 to 800 words so the AI can actually see the table!
         for w in first_page_words[:800]: 
             spatial_lines.append(f"[X: {w['x0']:.1f} -> {w['x1']:.1f}, Y: {w['top']:.1f}] {w['text']}")
         spatial_text = "\n".join(spatial_lines)
@@ -47,7 +63,8 @@ class LearningOrchestrator:
         req = LearningRequest(
             layout_fingerprint=signature.fingerprint_hash,
             structural_text=signature.structural_text,
-            sample_page_text=spatial_text 
+            sample_page_text=spatial_text,
+            provider_hint=provider_hint # Give the LLM the exact provider name to anchor it
         )
         
         try:
@@ -62,8 +79,9 @@ class LearningOrchestrator:
         test_statement = self._parse_and_validate(pdf_pages, candidate_artifact, "test_hash")
         
         if test_statement.validation.status == ValidationStatus.PASS:
-            self.repo.promote_to_active(cand_id, signature.fingerprint_hash)
-            logger.info("Candidate validated and promoted to ACTIVE.")
+            # UPDATED: Promote using the provider name so the DB can deprecate the old version
+            self.repo.promote_to_active(cand_id, candidate_artifact.provider_name)
+            logger.info(f"Candidate validated and promoted to ACTIVE for provider {candidate_artifact.provider_name}.")
             return candidate_artifact
         else:
             logger.warning(
