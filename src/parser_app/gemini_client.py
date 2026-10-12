@@ -49,7 +49,7 @@ class GeminiLLMClient:
         try:
             return LayoutArtifact.model_validate_json(cleaned_json)
         except json.JSONDecodeError as e:
-            raise LLMValidationError(f"Gemini hallucinated invalid JSON syntax: {e}")
+            raise LLMValidationError(f"Gemini output invalid JSON syntax: {e}")
         except ValidationError as e:
             raise LLMValidationError(f"Gemini output violated schema constraints: {e}")
 
@@ -57,28 +57,32 @@ class GeminiLLMClient:
         schema_json = json.dumps(LayoutArtifact.model_json_schema(), indent=2)
         
         return f"""
-        You are an elite, deterministic data extraction architect building parsing configurations.
-        Your task is to analyze the following sample text from a financial statement and generate a JSON ruleset that will allow a deterministic script to extract the data in the future.
-        
-        Context Hints:
-        Provider Name: {request.provider_hint or 'Unknown'}
-        Layout Fingerprint: {request.layout_fingerprint}
-        
-        CRITICAL RULES:
-        1. You must output ONLY valid JSON. Do NOT wrap it in markdown code blocks.
-        2. The JSON must exactly match the schema provided below.
-        3. For 'start_anchor' in tables, pick the exact unique phrase that appears right before the table headers (e.g., "Current Holdings" or "Portfolio Summary").
-        4. For table extraction rules, use geometric X-coordinates (x_start, x_end) that realistically map to columns. ADD PADDING to the boundaries! (e.g., if a word is [X: 70.0 -> 140.0], make the column x_start: 60, x_end: 160).
-        5. EXTREMELY IMPORTANT: For summary/context rules, carefully calculate 'offset_words'. This is the number of words between the label and the target value.
-           - Example A: Text is "Opening Value: 1000.00". If label is "Opening", target is "1000.00". The offset_words MUST BE 2 (skipping "Value:").
-           - Example B: Text is "Cash: 50.00". If label is "Cash:", target is "50.00". The offset_words MUST BE 1.
-        
-        EXPECTED STRICT JSON SCHEMA:
+        You are an elite, deterministic document parsing architect.
+        Analyze the spatial text of this financial statement and output a valid JSON configuration artifact.
+
+        Context:
+        Provider Hint: {request.provider_hint or 'Unknown'}
+
+        EXTRACTION DIRECTIVES:
+        1. Output ONLY valid JSON matching the schema below. No markdown wrappers.
+        2. 'provider_name': Extract the institution or fund house name.
+        3. 'summary_rules': Provide simple single-word anchor labels:
+           - opening_value: label="Opening"
+           - closing_value: label="Closing"
+           - cash_balance: label="Cash"
+        4. 'holdings_table':
+           - 'start_anchor': The title string preceding the table (e.g. "HOLDINGS LEDGER", "PORTFOLIO HOLDINGS", "Current Holdings").
+           - 'columns': Define the columns based on the sample coordinates:
+             * 'security_name' (covers the description text)
+             * 'isin' (covers the ISIN identifier)
+             * 'quantity' (covers unit counts)
+             * 'cost' (covers avg cost/purchase price)
+             * 'market_value' (covers total valuation)
+             Assign x_start and x_end using the bounding boxes in the sample.
+
+        TARGET SCHEMA:
         {schema_json}
-        
-        STRUCTURAL BOILERPLATE OVERVIEW (For context):
-        {request.structural_text}
-        
-        SAMPLE STATEMENT TEXT (With Physical X/Y Coordinates for Mapping):
+
+        DOCUMENT TEXT SAMPLE (With coordinates):
         {request.sample_page_text}
         """

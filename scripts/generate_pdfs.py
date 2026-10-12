@@ -1,99 +1,95 @@
 import os
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
 
-def generate_stress_test_statement():
-    out_dir = "tests/fixtures/raw_pdfs"
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+
+
+def generate_dense_statement():
+    # Save it outside the normal folder so you can manually email it!
+    out_dir = "tests/fixtures"
     os.makedirs(out_dir, exist_ok=True)
-    pdf_path = os.path.join(out_dir, "titan_stress_test.pdf")
+    pdf_path = os.path.join(out_dir, "zephyr_hostile_test.pdf")
     
     c = canvas.Canvas(pdf_path, pagesize=letter)
     
-    # ================= PAGE 1: DENSE CONTEXT & DISTRACTIONS =================
-    c.setFont("Helvetica-Bold", 18)
-    c.drawString(50, 750, "TITAN WEALTH ENTERPRISES - CONSOLIDATED STATEMENT")
+    # --- HEADER SECTION (NOISE) ---
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(40, 760, "ZEPHYR QUANTUM WEALTH - INSTITUTIONAL CONSOLIDATED REPORT")
+    c.setFont("Helvetica", 7)
+    c.drawString(40, 745, "Client: ZQ-7742-ALPHA | Statement Date: 31-Oct-2026 | Base Currency: INR (Indian Rupee) | Generated via Secure API")
+    c.drawString(40, 735, "Confidentiality Notice: This document contains highly sensitive financial data. Unauthorized distribution is strictly prohibited under Act 402.")
+    
+    # --- SUMMARY SECTION (COMPLEX OFFSETS) ---
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(40, 710, "EXECUTIVE FINANCIAL SUMMARY")
+    c.setFont("Helvetica", 9)
+    # The AI must calculate offset_words = 6 for this to work!
+    c.drawString(40, 695, "Opening Portfolio Value as of 01-Oct-26: 25000000.00") 
+    
+    # The AI must calculate offset_words = 4 for this!
+    c.drawString(40, 680, "Total Settled Cash Balance (INR): 1500000.00")
+    
+    # The AI must calculate offset_words = 5 for this!
+    c.drawString(40, 665, "Net Closing Value (Base INR): 26500000.00")
+    
+    # Distraction math that the validator doesn't care about
+    c.drawString(350, 695, "Total Margin Available: 500000.00")
+    c.drawString(350, 680, "Accrued Interest (Not Settled): 25000.00")
+    
+    # --- DENSE HOLDINGS TABLE ---
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(40, 630, "ZEPHYR QUANTUM HOLDINGS LEDGER") # This is the start_anchor!
+    
+    c.setFont("Helvetica-Bold", 8)
+    # 6 columns, very tight spacing
+    c.drawString(40, 615, "Security Description")
+    c.drawString(200, 615, "ISIN Code")
+    c.drawString(300, 615, "Quantity")
+    c.drawString(360, 615, "Avg Cost")
+    c.drawString(430, 615, "Market Value")
+    c.drawString(510, 615, "Unrealized P/L")
+    
+    # Draw a line
+    c.line(40, 610, 570, 610)
     
     c.setFont("Helvetica", 8)
-    text = "Dear Client, enclosed is your highly detailed, multi-page consolidated statement for the period ending October 2026. " * 5
-    c.drawString(50, 720, text[:130])
-    c.drawString(50, 710, text[130:260])
+    # Row 1 (10 Million)
+    c.drawString(40, 595, "Quantum Tech ETF Class B")
+    c.drawString(200, 595, "INE999Q01011")
+    c.drawString(300, 595, "5000")
+    c.drawString(360, 595, "1800.00")
+    c.drawString(430, 595, "10000000.00")
+    c.drawString(510, 595, "+1000000.00")
     
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(50, 680, "ACCOUNT SUMMARY (BASE INR)")
-    c.setFont("Helvetica", 10)
-    c.drawString(50, 660, "Opening Value: 50000000.00")
-    c.drawString(250, 660, "Cash Balance: 1500000.00")
-    c.drawString(450, 660, "Closing Value: 56500000.00")
+    # Row 2 (10 Million)
+    c.drawString(40, 580, "Zephyr Alpha Strategy")
+    c.drawString(200, 580, "INE999Q01022")
+    c.drawString(300, 580, "2500")
+    c.drawString(360, 580, "3500.00")
+    c.drawString(430, 580, "10000000.00")
+    c.drawString(510, 580, "+1250000.00")
     
-    # DISTRACTION TABLE (AI might mistakenly parse this)
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(50, 620, "FEE SCHEDULE (IGNORE THIS TABLE)")
-    c.setFont("Helvetica", 9)
-    c.drawString(50, 600, "Management Fee: 2.0% | Performance Fee: 20.0%")
+    # Row 3 (5 Million)
+    c.drawString(40, 565, "Liquid BeES Treasury")
+    c.drawString(200, 565, "INE999Q01033")
+    c.drawString(300, 565, "5000")
+    c.drawString(360, 565, "1000.00")
+    c.drawString(430, 565, "5000000.00")
+    c.drawString(510, 565, "0.00")
     
-    # REAL HOLDINGS TABLE - START
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, 550, "PORTFOLIO HOLDINGS")
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(50, 530, "Security Name")
-    c.drawString(200, 530, "ISIN")
-    c.drawString(320, 530, "Qty")
-    c.drawString(400, 530, "Market Value")
+    # Math check: 10M + 10M + 5M = 25M Holdings. + 1.5M Cash = 26.5M Closing.
     
-    c.setFont("Helvetica", 10)
-    y = 510
-    for i in range(1, 5):
-        c.drawString(50, y, f"Titan Equity Fund {i}")
-        c.drawString(200, y, f"INE000T0100{i}")
-        c.drawString(320, y, "1000")
-        c.drawString(400, y, "5000000.00")  # 4 * 5M = 20M on this page
-        y -= 20
-        
-    c.showPage()
+    # --- FOOTER SECTION (MASSIVE NOISE) ---
+    c.setFont("Helvetica-Oblique", 6)
+    y = 520
+    noise_text = "DISCLAIMER: The valuations provided in this statement are for informational purposes only. Zephyr Quantum Wealth does not guarantee the accuracy of third-party pricing feeds. " * 3
+    c.drawString(40, y, noise_text[:150])
+    c.drawString(40, y-10, noise_text[150:300])
+    c.drawString(40, y-20, noise_text[300:450])
+    c.drawString(40, y-30, "Past performance is not indicative of future results. Market values include accrued interest where applicable. Please consult your tax advisor regarding Unrealized P/L.")
     
-    # ================= PAGE 2: PURE HOLDINGS TABLE =================
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, 750, "PORTFOLIO HOLDINGS (CONTINUED PAGE 2)")
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(50, 730, "Security Name")
-    c.drawString(200, 730, "ISIN")
-    c.drawString(320, 730, "Qty")
-    c.drawString(400, 730, "Market Value")
-    
-    c.setFont("Helvetica", 10)
-    y = 710
-    for i in range(5, 10):
-        c.drawString(50, y, f"Titan Debt Fund {i}")
-        c.drawString(200, y, f"INE000T0200{i}")
-        c.drawString(320, y, "2000")
-        c.drawString(400, y, "6000000.00") # 5 * 6M = 30M on this page
-        y -= 20
-        
-    c.showPage()
-    
-    # ================= PAGE 3: FINAL HOLDING & TRANSACTIONS =================
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, 750, "PORTFOLIO HOLDINGS (CONTINUED PAGE 3)")
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(50, 730, "Security Name")
-    c.drawString(200, 730, "ISIN")
-    c.drawString(320, 730, "Qty")
-    c.drawString(400, 730, "Market Value")
-    
-    c.setFont("Helvetica", 10)
-    c.drawString(50, 710, "Titan Gold ETF 10")
-    c.drawString(200, 710, "INE000T03010")
-    c.drawString(320, 710, "5000")
-    c.drawString(400, 710, "5000000.00") # 1 * 5M = 5M. Total = 20M + 30M + 5M = 55M.
-    
-    c.showPage()
-    
-    # ================= PAGE 4: FOOTER =================
-    c.setFont("Helvetica-Oblique", 8)
-    c.drawString(50, 750, "End of Statement. This document was automatically generated for stress testing.")
     c.save()
-    
-    print(f"✅ Titan Stress Test 4-Page PDF generated at: {pdf_path}")
+    print(f"✅ Hostile 1-Page PDF generated at: {pdf_path}")
 
 if __name__ == "__main__":
-    generate_stress_test_statement()
+    generate_dense_statement()
