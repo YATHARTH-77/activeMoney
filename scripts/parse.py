@@ -35,14 +35,21 @@ def main():
     repo = ArtifactRepository(db_path="data/artifacts.db")
     stmt_repo = StatementRepository(db_path="data/statements.db")
     
-    api_key = os.getenv("GEMINI_API_KEY")
-    if args.mock or not api_key or api_key == "your_real_api_key_here":
-        logger.warning("No valid GEMINI_API_KEY found or --mock flag used. Falling back to MockLLMClient (Offline Mode).")
-        dummy_json = '{"artifact_version": "1.0", "layout_fingerprint": "mock", "provider_name": "MockProvider", "context_rules": [], "summary_rules": [], "holdings_table": null}'
-        llm = MockLLMClient(simulate_mode="success", mock_json_response=dummy_json)
-    else:
+    groq_key = os.getenv("GROQ_API_KEY")
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    
+    if groq_key and groq_key != "your_groq_api_key_here":
+        from parser_app.groq_client import GroqLLMClient
+        logger.info("⚡ Live Groq Client (Llama 3.3 70B) Initialized.")
+        llm = GroqLLMClient()
+    elif gemini_key and gemini_key != "your_real_api_key_here":
+        from parser_app.gemini_client import GeminiLLMClient
         logger.info("Live Gemini 3.8 Flash Client Initialized.")
         llm = GeminiLLMClient()
+    else:
+        logger.warning("No valid API keys found. Falling back to MockLLMClient.")
+        dummy_json = '{"artifact_version": "1.0", "layout_fingerprint": "mock", "provider_name": "MockProvider", "context_rules": [], "summary_rules": [], "holdings_table": null}'
+        llm = MockLLMClient(simulate_mode="success", mock_json_response=dummy_json)
         
     orchestrator = LearningOrchestrator(repo, llm)
     processor = StatementProcessor(orchestrator, max_workers=4)

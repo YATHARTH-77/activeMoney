@@ -38,6 +38,7 @@ class ArtifactRepository:
                 INSERT INTO artifacts (fingerprint, provider_name, status, json_payload)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(fingerprint) DO UPDATE SET
+                    provider_name=excluded.provider_name,
                     status=excluded.status,
                     json_payload=excluded.json_payload
             """, (
@@ -47,7 +48,11 @@ class ArtifactRepository:
                 artifact.model_dump_json()
             ))
             conn.commit()
-            return cursor.lastrowid
+            cursor.execute(
+                "SELECT id FROM artifacts WHERE fingerprint = ?",
+                (artifact.layout_fingerprint,),
+            )
+            return cursor.fetchone()[0]
 
     def get_active_artifact(self, fingerprint: str) -> Optional[LayoutArtifact]:
         with sqlite3.connect(self.db_path) as conn:
