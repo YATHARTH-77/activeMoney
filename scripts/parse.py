@@ -1,99 +1,95 @@
-import argparse
-import hashlib
-import logging
 import os
-import sys
-import time
+import argparse
+import logging
 from pathlib import Path
+import hashlib
+from dotenv import load_dotenv
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-src_dir = os.path.abspath(os.path.join(current_dir, "..", "src"))
-sys.path.insert(0, src_dir)
+from parser_app.artifact_repository import ArtifactRepository
+from parser_app.statement_repository import StatementRepository
+from parser_app.orchestrator import LearningOrchestrator
+from parser_app.queue_worker import StatementProcessor
+from parser_app.llm_client import MockLLMClient
 
-from parser_app.artifact_repository import ArtifactRepository  # noqa: E402
-from parser_app.gemini_client import GeminiLLMClient  # noqa: E402
-from parser_app.llm_client import MockLLMClient  # noqa: E402
-from parser_app.orchestrator import LearningOrchestrator  # noqa: E402
-from parser_app.queue_worker import StatementProcessor  # noqa: E402
-from parser_app.statement_repository import StatementRepository  # noqa: E402
-
+load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-logger = logging.getLogger("ActivvParser")
+logger = logging.getLogger("Pipeline")
 
 def main():
-    parser = argparse.ArgumentParser(description="Activv Money - Self-Learning PMS/AIF Parser")
-    parser.add_argument("--input", "-i", type=str, default="tests/fixtures/raw_pdfs", help="Directory containing PDF statements")
-    parser.add_argument("--mock", action="store_true", help="Force mock LLM (Offline mode)")
+    parser = argparse.ArgumentParser(description="Activv Money Parser Pipeline")
+    parser.add_argument("--input", default="tests/fixtures/raw_pdfs", help="Directory containing PDFs")
+    parser.add_argument("--workers", type=int, default=1, help="Max parallel workers (Set to 1 to respect Groq free-tier rate limits)")
     args = parser.parse_args()
 
     print("\n" + "="*60)
-    print("🚀 ACTIVV MONEY: SELF-LEARNING PARSER PIPELINE 🚀")
+    print("🚀 ACTIVV MONEY: MULTI-PROVIDER AI PIPELINE 🚀")
     print("="*60)
-    
-    start_time = time.time()
-    
+
     repo = ArtifactRepository(db_path="data/artifacts.db")
     stmt_repo = StatementRepository(db_path="data/statements.db")
+
+    # BUILD THE LLM ROUTING POOL
+    llm_clients = []
     
     groq_key = os.getenv("GROQ_API_KEY")
     gemini_key = os.getenv("GEMINI_API_KEY")
-    
+
     if groq_key and groq_key != "your_groq_api_key_here":
         from parser_app.groq_client import GroqLLMClient
-        logger.info("⚡ Live Groq Client (Llama 3.3 70B) Initialized.")
-        llm = GroqLLMClient()
-    elif gemini_key and gemini_key != "your_real_api_key_here":
-        from parser_app.gemini_client import GeminiLLMClient
-        logger.info("Live Gemini 3.8 Flash Client Initialized.")
-        llm = GeminiLLMClient()
-    else:
-        logger.warning("No valid API keys found. Falling back to MockLLMClient.")
-        dummy_json = '{"artifact_version": "1.0", "layout_fingerprint": "mock", "provider_name": "MockProvider", "context_rules": [], "summary_rules": [], "holdings_table": null}'
-        llm = MockLLMClient(simulate_mode="success", mock_json_response=dummy_json)
+        logger.info("🟢 Added Groq (gpt-oss-20b) to routing pool as Primary.")
+        llm_clients.append(GroqLLMClient())
         
-    orchestrator = LearningOrchestrator(repo, llm)
-    processor = StatementProcessor(orchestrator, max_workers=4)
+    if gemini_key and gemini_key != "your_real_api_key_here":
+        from parser_app.gemini_client import GeminiLLMClient
+        logger.info("🔵 Added Gemini (3.8-flash) to routing pool as Fallback.")
+        llm_clients.append(GeminiLLMClient())
+
+    if not llm_clients:
+        logger.warning("No API keys found. Falling back to MockLLMClient.")
+        dummy_json = '{"artifact_version": "1.0", "layout_fingerprint": "mock", "provider_name": "MockProvider", "context_rules": [], "summary_rules": [], "holdings_table": null}'
+        llm_clients.append(MockLLMClient(simulate_mode="success", mock_json_response=dummy_json))
+
+    orchestrator = LearningOrchestrator(repo, llm_clients)
+    
+    # We set max_workers=1 by default to prevent Groq from throwing 429 Rate Limit errors
+    processor = StatementProcessor(orchestrator, max_workers=args.workers)
 
     input_dir = Path(args.input)
     if not input_dir.exists():
-        logger.error(f"Input directory not found: {input_dir}")
-        sys.exit(1)
+        logger.error(f"Input directory {input_dir} not found.")
+        return
 
     staged_files = []
     for pdf_path in input_dir.glob("*.pdf"):
         file_hash = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
         staged_files.append((file_hash, str(pdf_path)))
-        
+
     if not staged_files:
-        logger.warning(f"No PDFs found in {input_dir}")
-        sys.exit(0)
+        logger.info(f"No PDFs found in {input_dir}.")
+        return
 
-    logger.info(f"Queueing {len(staged_files)} documents for parallel processing...\n")
+    logger.info(f"Queueing {len(staged_files)} documents for processing...\n")
     
-    results = []
-    try:
-        results = processor.process_batch(staged_files)
-        for stmt in results:
-            stmt_repo.save_statement(stmt)
-    except KeyboardInterrupt:
-        print("\n\n🛑 SHUTDOWN SIGNAL RECEIVED (Ctrl+C) 🛑")
-        print("Gracefully halting workers and preventing database corruption...")
-        sys.exit(130)
-
-    # Calculate Metrics
-    elapsed_time = time.time() - start_time
-    total_docs = len(staged_files)
-    successful_docs = len([s for s in results if s.validation.status.name == "PASS"])
-    failed_docs = total_docs - successful_docs
-    throughput = total_docs / elapsed_time if elapsed_time > 0 else 0
+    results = processor.process_batch(staged_files)
+    
+    success_count = 0
+    for stmt in results:
+        stmt_repo.save_statement(stmt)
+        if stmt.validation.status.name == "PASS":
+            success_count += 1
 
     print("\n" + "="*60)
     print("📊 OBSERVABILITY & PERFORMANCE METRICS 📊")
     print("="*60)
-    print(f"Total Time:      {elapsed_time:.2f} seconds")
+    if processor.metrics.total_processing_time > 0:
+        throughput = len(results) / processor.metrics.total_processing_time
+    else:
+        throughput = 0.0
+        
+    print(f"Total Time:      {processor.metrics.total_processing_time:.2f} seconds")
     print(f"Throughput:      {throughput:.2f} documents/second")
-    print(f"Success Rate:    {successful_docs}/{total_docs} ({(successful_docs/total_docs)*100 if total_docs else 0:.1f}%)")
-    print(f"Quarantined:     {failed_docs} (Requires Human Review)")
+    print(f"Success Rate:    {success_count}/{len(results)} ({(success_count/len(results))*100:.1f}%)")
+    print(f"Quarantined:     {len(results) - success_count} (Requires Human Review)")
     print("="*60 + "\n")
 
 if __name__ == "__main__":

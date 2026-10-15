@@ -88,8 +88,26 @@ class DeterministicParser:
         lines = [line.strip() for line in full_text.split("\n") if line.strip()]
 
         for rule in self.artifact.summary_rules:
-            target_key = rule.name
-            label_pattern = re.escape(rule.label)
+            norm_rule = rule.name.lower()
+            if "open" in norm_rule:
+                target_key = "opening_value"
+            elif "close" in norm_rule or "net" in norm_rule or "portfolio" in norm_rule:
+                target_key = "closing_value"
+            elif "cash" in norm_rule or "bank" in norm_rule:
+                target_key = "cash_balance"
+            elif "fee" in norm_rule or "charge" in norm_rule:
+                target_key = "fees_charged"
+            elif "nav" in norm_rule:
+                target_key = "nav_per_unit"
+            else:
+                target_key = rule.name
+
+            # Strip brackets or coordinates from LLM-generated label
+            clean_label = re.sub(r"\[P\d+[^\]]*\]", "", rule.label).strip()
+            if not clean_label:
+                continue
+
+            label_pattern = re.escape(clean_label)
 
             for line in lines:
                 match = re.search(label_pattern, line, re.IGNORECASE)
@@ -108,6 +126,34 @@ class DeterministicParser:
                         except InvalidOperation:
                             continue
 
+        # Fallback regular expression scans if summary rules did not extract values
+        if values["closing_value"] == "0":
+            close_match = re.search(
+                r"(?:closing|portfolio\s+value|net\s+value|closing\s+val)[\s:]*([0-9,]+(?:\.[0-9]+)?)",
+                full_text,
+                re.IGNORECASE,
+            )
+            if close_match:
+                values["closing_value"] = close_match.group(1).replace(",", "")
+
+        if values["cash_balance"] == "0":
+            cash_match = re.search(
+                r"(?:cash(?:\s+balance)?|settled\s+cash|bank\s+balance)[\s:]*([0-9,]+(?:\.[0-9]+)?)",
+                full_text,
+                re.IGNORECASE,
+            )
+            if cash_match:
+                values["cash_balance"] = cash_match.group(1).replace(",", "")
+
+        if values["opening_value"] == "0":
+            open_match = re.search(
+                r"(?:opening(?:\s+value|\s+balance)?)[\s:]*([0-9,]+(?:\.[0-9]+)?)",
+                full_text,
+                re.IGNORECASE,
+            )
+            if open_match:
+                values["opening_value"] = open_match.group(1).replace(",", "")
+
         return Summary(
             opening_value=values.get("opening_value") or "0",
             closing_value=values.get("closing_value") or "0",
@@ -122,18 +168,15 @@ class DeterministicParser:
             return []
 
         holdings: List[Holding] = []
-        anchor = table_rule.start_anchor.strip().lower()
+        clean_anchor = re.sub(r"\[P\d+[^\]]*\]", "", table_rule.start_anchor).strip().lower()
         state = "SEARCHING"
 
-        # Sections that permanently close the holdings table once holdings are already collected
         terminal_sections = [
             "transaction ledger",
             "transaction history",
-            "end of statement",
             "capital gains",
         ]
 
-        # Non-table boilerplate lines to skip without aborting page scanning
         noise_indicators = [
             "disclaimer",
             "confidentiality notice",
@@ -141,7 +184,6 @@ class DeterministicParser:
             "disclosures",
             "continued on next page",
             "fee schedule",
-            "management fee",
             "account summary",
             "executive financial summary",
         ]
@@ -154,7 +196,6 @@ class DeterministicParser:
             if not words:
                 continue
 
-            # Group words into horizontal rows (Y-tolerance +/- 3.5 pts)
             lines_dict: Dict[float, List[Dict[str, Any]]] = {}
             for w in words:
                 matched_top = None
@@ -171,50 +212,47 @@ class DeterministicParser:
                 line_words = sorted(lines_dict[top], key=lambda item: item["x0"])
                 line_text = " ".join(w["text"] for w in line_words).strip().lower()
 
-                # 1. State: SEARCHING for initial table anchor
+                # Table entry detection: anchor match OR standard table header row
+                is_header_row = (
+                    ("security" in line_text or "scrip" in line_text or "particular" in line_text or "holding" in line_text)
+                    and ("value" in line_text or "market" in line_text or "amount" in line_text or "isin" in line_text or "qty" in line_text)
+                )
+
                 if state == "SEARCHING":
                     if (
-                        anchor in line_text
+                        (clean_anchor and clean_anchor in line_text)
                         or "holdings ledger" in line_text
                         or "portfolio holdings" in line_text
                         or "current holdings" in line_text
                         or "detailed holdings" in line_text
+                        or "holdings" in line_text
+                        or is_header_row
                     ):
                         state = "ACTIVE_TABLE"
                     continue
 
-                # 2. Priority Header & Continuation Suppression (Must run BEFORE footer checks!)
-                if (
-                    "continued" in line_text
-                    or "portfolio holdings" in line_text
-                    or "holdings ledger" in line_text
-                    or "current holdings" in line_text
-                    or "detailed holdings" in line_text
-                    or ("security" in line_text and ("isin" in line_text or "market" in line_text))
-                ):
+                # Header and continuation row suppression
+                if is_header_row or "continued" in line_text or "holdings report" in line_text:
                     continue
 
-                # 3. Check for true post-holdings sections
                 if any(term in line_text for term in terminal_sections):
                     if len(holdings) > 0:
                         state = "TERMINATED"
                         break
                     continue
 
-                # 4. Skip running footers, page numbers ("page 1 of 4"), and disclaimers
                 if any(noise in line_text for noise in noise_indicators) or re.search(
                     r"\bpage\s+\d+\s+of\s+\d+\b", line_text
                 ):
                     continue
 
-                # 5. Center-of-Mass Geometric Column Projection
+                # Center-of-Mass Geometric Column Projection
                 row_data: Dict[str, str] = {}
                 sorted_cols = sorted(table_rule.columns, key=lambda c: c.x_start)
 
                 for idx, col in enumerate(sorted_cols):
                     col_words = []
                     c_start = col.x_start - 15.0
-                    # Allow the rightmost column (typically market_value) generous right-margin capture
                     c_end = col.x_end + (35.0 if idx == len(sorted_cols) - 1 else 15.0)
 
                     for w in line_words:
@@ -224,28 +262,51 @@ class DeterministicParser:
 
                     row_data[col.name] = " ".join(col_words).strip()
 
-                sec_name = row_data.get("security_name", "")
-                isin_val = row_data.get("isin", "").strip()
-                qty_raw = row_data.get("quantity", "")
-                market_val_raw = row_data.get("market_value", "")
+                # Fuzzy column resolution helper
+                def find_cell(synonyms: List[str]) -> str:
+                    for s in synonyms:
+                        for col_name, val in row_data.items():
+                            norm_col = col_name.lower().replace(" ", "_")
+                            if s in norm_col:
+                                return val
+                    return ""
+
+                sec_name = find_cell(["security", "name", "desc", "scrip", "particular", "holding", "company"])
+                isin_val = find_cell(["isin", "code"])
+                qty_raw = find_cell(["quantity", "qty", "units", "shares"])
+                cost_raw = find_cell(["cost", "price", "avg"])
+                market_val_raw = find_cell(["market_value", "market", "value", "val", "amount", "worth"])
+
+                # If specific column names were not resolved, use position fallback
+                if not sec_name and sorted_cols:
+                    sec_name = row_data.get(sorted_cols[0].name, "")
+                if not market_val_raw and len(sorted_cols) > 1:
+                    market_val_raw = row_data.get(sorted_cols[-1].name, "")
 
                 market_val_clean = re.sub(r"[^\d.-]", "", market_val_raw)
                 qty_clean = re.sub(r"[^\d.-]", "", qty_raw) or "0"
-                cost_clean = re.sub(r"[^\d.-]", "", row_data.get("cost", "0")) or "0"
+                cost_clean = re.sub(r"[^\d.-]", "", cost_raw) or "0"
 
-                # 6. Multi-Factor Structural Row Integrity Check
-                if len(sec_name) >= 3 and not sec_name.replace(".", "").isdigit():
+                # Row validation: must not be a summary line or disclaimer
+                summary_terms = ["total", "closing", "opening", "balance", "subtotal", "sub-total", "net worth", "end of"]
+                is_summary_line = any(term in sec_name.lower() for term in summary_terms)
+                is_disclaimer_line = any(term in sec_name.lower() for term in ["disclaimer", "statement", "confidential", "risk"])
+
+                if (
+                    len(sec_name) >= 3
+                    and len(sec_name) <= 65
+                    and not sec_name.replace(".", "").isdigit()
+                    and not is_summary_line
+                    and not is_disclaimer_line
+                ):
                     try:
                         m_val = Decimal(market_val_clean)
-                        qty_val = Decimal(qty_clean)
-                        has_valid_isin = bool(re.match(r"^[A-Z]{2}[A-Z0-9]{8,12}$", isin_val))
-
-                        if m_val > 0 and (qty_val > 0 or has_valid_isin):
+                        if m_val > 0:
                             holdings.append(
                                 Holding(
                                     security_name=sec_name,
                                     isin=isin_val if isin_val else None,
-                                    quantity=qty_val,
+                                    quantity=Decimal(qty_clean),
                                     cost=Decimal(cost_clean),
                                     market_value=m_val,
                                     weight=None,

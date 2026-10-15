@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any, Dict, List, Tuple
 
 from parser_app.artifact_repository import ArtifactRepository, ArtifactStatus
@@ -13,9 +14,9 @@ logger = logging.getLogger(__name__)
 
 
 class LearningOrchestrator:
-    def __init__(self, repo: ArtifactRepository, llm_client: LLMClient):
+    def __init__(self, repo: ArtifactRepository, llm_clients: List[LLMClient] | LLMClient):
         self.repo = repo
-        self.llm_client = llm_client
+        self.llm_clients = llm_clients if isinstance(llm_clients, list) else [llm_clients]
 
     def process_document(
         self, pdf_pages: List[Dict[str, Any]], source_hash: str
@@ -59,17 +60,27 @@ class LearningOrchestrator:
         signature: LayoutSignature,
         provider_hint: str = None,
     ) -> LayoutArtifact | None:
-        # MULTI-PAGE SPATIAL SAMPLING:
-        # Sample spatial coordinates across up to 4 pages so the LLM sees cover pages,
-        # multi-page table continuations, and late-page summaries.
         spatial_lines = []
-        for page_idx, page in enumerate(pdf_pages[:4]):
-            page_words = page.get("words", [])
-            spatial_lines.append(f"--- PAGE {page_idx + 1} SPATIAL SAMPLE ---")
-            for w in page_words[:450]:
-                spatial_lines.append(
-                    f"[P{page_idx + 1} | X: {w['x0']:.1f} -> {w['x1']:.1f}, Y: {w['top']:.1f}] {w['text']}"
-                )
+        for page_idx, page in enumerate(pdf_pages[:3]):
+            words = page.get("words", [])
+            spatial_lines.append(f"--- PAGE {page_idx + 1} ---")
+            lines_dict: Dict[float, List[Dict[str, Any]]] = {}
+            for w in words:
+                matched_top = None
+                for top in lines_dict.keys():
+                    if abs(w["top"] - top) < 3.5:
+                        matched_top = top
+                        break
+                if matched_top is not None:
+                    lines_dict[matched_top].append(w)
+                else:
+                    lines_dict[w["top"]] = [w]
+
+            for top in sorted(lines_dict.keys())[:35]:
+                lw = sorted(lines_dict[top], key=lambda i: i["x0"])
+                tokens = [f"X:{w['x0']:.0f}-{w['x1']:.0f} '{w['text']}'" for w in lw]
+                spatial_lines.append(f"[Y:{top:.0f}] " + " | ".join(tokens))
+
         spatial_text = "\n".join(spatial_lines)
 
         req = LearningRequest(
@@ -79,29 +90,37 @@ class LearningOrchestrator:
             provider_hint=provider_hint,
         )
 
-        try:
-            candidate_artifact = self.llm_client.learn_layout(req)
-        except LLMError as e:
-            logger.error(f"LLM Learning failed: {e}")
-            return None
+        for llm in self.llm_clients:
+            provider_name = llm.__class__.__name__
+            try:
+                candidate_artifact = llm.learn_layout(req)
 
-        candidate_artifact.layout_fingerprint = signature.fingerprint_hash
-        cand_id = self.repo.save_candidate(candidate_artifact)
+                # Clean hallucinated brackets or metadata from start_anchor
+                if candidate_artifact.holdings_table:
+                    candidate_artifact.holdings_table.start_anchor = re.sub(
+                        r"\[[^\]]*\]", "", candidate_artifact.holdings_table.start_anchor
+                    ).strip()
 
-        test_statement = self._parse_and_validate(pdf_pages, candidate_artifact, "test_hash")
+                candidate_artifact.layout_fingerprint = signature.fingerprint_hash
+                cand_id = self.repo.save_candidate(candidate_artifact)
 
-        if test_statement.validation.status == ValidationStatus.PASS:
-            self.repo.promote_to_active(cand_id, candidate_artifact.provider_name)
-            logger.info(
-                f"Candidate validated and promoted to ACTIVE for provider {candidate_artifact.provider_name}."
-            )
-            return candidate_artifact
-        else:
-            logger.warning(
-                f"Candidate rejected due to financial mismatch: {test_statement.validation.details}"
-            )
-            self._mark_rejected(cand_id)
-            return None
+                test_statement = self._parse_and_validate(pdf_pages, candidate_artifact, "test_hash")
+
+                if test_statement.validation.status == ValidationStatus.PASS:
+                    self.repo.promote_to_active(cand_id, candidate_artifact.provider_name)
+                    logger.info(f"✅ [{provider_name}] Candidate validated and promoted to ACTIVE!")
+                    return candidate_artifact
+                else:
+                    logger.warning(
+                        f"❌ [{provider_name}] Candidate failed math validation. Details: {test_statement.validation.details}"
+                    )
+                    self._mark_rejected(cand_id)
+            except LLMError as e:
+                logger.error(f"❌ [{provider_name}] API Error: {e}")
+                continue
+
+        logger.error("🛑 All LLM providers failed to generate a mathematically valid artifact.")
+        return None
 
     def _parse_and_validate(
         self, pdf_pages: List[Dict[str, Any]], artifact: LayoutArtifact, source_hash: str
@@ -147,6 +166,6 @@ class LearningOrchestrator:
             ),
             validation=ValidationResult(
                 status=ValidationStatus.FAIL,
-                details="Learning phase failed or rejected.",
+                details="All LLM providers failed learning phase.",
             ),
         )

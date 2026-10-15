@@ -16,10 +16,7 @@ sys.path.insert(0, src_dir)
 sys.path.insert(0, current_dir)
 
 from gmail_collector import collect_unread_emails  # noqa: E402
-
 from parser_app.artifact_repository import ArtifactRepository  # noqa: E402
-from parser_app.gemini_client import GeminiLLMClient  # noqa: E402
-from parser_app.llm_client import MockLLMClient  # noqa: E402
 from parser_app.orchestrator import LearningOrchestrator  # noqa: E402
 from parser_app.queue_worker import StatementProcessor  # noqa: E402
 from parser_app.statement_repository import StatementRepository  # noqa: E402
@@ -95,19 +92,31 @@ def run_pipeline_from_ui(input_folder: str, use_mock: bool = False):
     repo = ArtifactRepository(db_path="data/artifacts.db")
     stmt_repo = StatementRepository(db_path="data/statements.db")
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    if use_mock or not api_key or api_key == "your_real_api_key_here":
+    llm_clients = []
+    groq_key = os.getenv("GROQ_API_KEY")
+    gemini_key = os.getenv("GEMINI_API_KEY")
+
+    if not use_mock:
+        if groq_key and groq_key != "your_groq_api_key_here":
+            from parser_app.groq_client import GroqLLMClient
+            llm_clients.append(GroqLLMClient())
+        if gemini_key and gemini_key != "your_real_api_key_here":
+            from parser_app.gemini_client import GeminiLLMClient
+            llm_clients.append(GeminiLLMClient())
+
+    if not llm_clients:
+        from parser_app.llm_client import MockLLMClient
         dummy_json = (
             '{"artifact_version": "1.0", "layout_fingerprint": "mock", '
             '"provider_name": "MockProvider", "context_rules": [], '
             '"summary_rules": [], "holdings_table": null}'
         )
-        llm = MockLLMClient(simulate_mode="success", mock_json_response=dummy_json)
-    else:
-        llm = GeminiLLMClient()
+        llm_clients.append(MockLLMClient(simulate_mode="success", mock_json_response=dummy_json))
 
-    orchestrator = LearningOrchestrator(repo, llm)
-    processor = StatementProcessor(orchestrator, max_workers=4)
+    orchestrator = LearningOrchestrator(repo, llm_clients)
+    
+    # max_workers=1 protects the UI from triggering 429 Too Many Requests errors on free-tier APIs
+    processor = StatementProcessor(orchestrator, max_workers=1)
 
     input_dir = Path(input_folder)
     if not input_dir.exists():
@@ -139,7 +148,7 @@ def main():
         st.divider()
 
         st.markdown("#### 1. Live Gmail Ingestion")
-        if st.button("📩 Sync Unread Emails (IMAP)", use_container_width=True):
+        if st.button("📩 Sync Unread Emails (IMAP)", width="stretch"):
             with st.spinner("Connecting to imap.gmail.com..."):
                 try:
                     collect_unread_emails()
@@ -152,7 +161,7 @@ def main():
             "Target Input Directory",
             ["data/staging", "tests/fixtures/raw_pdfs"],
         )
-        if st.button("🚀 Run Parser Pipeline", type="primary", use_container_width=True):
+        if st.button("🚀 Run Parser Pipeline", type="primary", width="stretch"):
             with st.spinner(f"Processing PDFs in {target_dir}..."):
                 count, msg = run_pipeline_from_ui(target_dir)
                 if count > 0:
@@ -235,7 +244,7 @@ def main():
                         "created_at",
                     ]
                 ],
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -257,7 +266,6 @@ def main():
                 prov = data.get("provenance", {})
                 holdings = data.get("holdings", [])
 
-                # Top Context & Validation Banner
                 c1, c2, c3, c4 = st.columns(4)
                 c1.markdown(f"**Provider:**\n{ctx.get('provider_name', 'N/A')}")
                 c2.markdown(f"**Client ID:**\n`{ctx.get('client_identifier', 'N/A')}`")
@@ -270,7 +278,6 @@ def main():
 
                 st.info(f"**Reconciliation Diagnostics:** {val.get('details')}")
 
-                # Financial Summary Metrics
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("Opening Value", format_inr(summ.get("opening_value", "0")))
                 holdings_sum = sum(Decimal(str(h.get("market_value", "0"))) for h in holdings)
@@ -278,11 +285,10 @@ def main():
                 m3.metric("Cash Balance", format_inr(summ.get("cash_balance", "0")))
                 m4.metric("Closing Value", format_inr(summ.get("closing_value", "0")))
 
-                # Holdings Table
                 st.markdown("#### 📈 Extracted Portfolio Holdings")
                 if holdings:
                     df_holdings = pd.DataFrame(holdings)
-                    st.dataframe(df_holdings, use_container_width=True, hide_index=True)
+                    st.dataframe(df_holdings, width="stretch", hide_index=True)
                 else:
                     st.warning("Zero holdings extracted for this statement.")
 
@@ -321,7 +327,7 @@ def main():
                             if st.button(
                                 "Mark as Resolved",
                                 key=f"resolve_{item['statement_id']}",
-                                use_container_width=True,
+                                width="stretch",
                             ):
                                 stmt_repo.mark_resolved(item["statement_id"])
                                 st.rerun()
@@ -330,7 +336,7 @@ def main():
     with tab_artifacts:
         st.markdown("### 🧬 Persisted Layout Artifacts (`artifacts.db`)")
         st.caption(
-            "Declarative JSON extraction rules learned once via Gemini and reused deterministically with zero runtime LLM calls."
+            "Declarative JSON extraction rules learned once via AI and reused deterministically with zero runtime LLM calls."
         )
 
         if not all_artifacts:
@@ -339,7 +345,7 @@ def main():
             df_art = pd.DataFrame(all_artifacts)[
                 ["id", "provider_name", "status", "fingerprint", "created_at"]
             ]
-            st.dataframe(df_art, use_container_width=True, hide_index=True)
+            st.dataframe(df_art, width="stretch", hide_index=True)
 
             selected_art_id = st.selectbox(
                 "Inspect Learned Coordinate JSON Ruleset (by Artifact ID)",
