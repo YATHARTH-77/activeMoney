@@ -1,0 +1,53 @@
+{
+  "statement_id": "STMT-0fe904ef",
+  "context": {
+    "provider_name": "ZEPHYR QUANTUM WEALTH INSTITUTIONAL CONSOLIDATED",
+    "strategy_name": "Consolidated Portfolio",
+    "client_identifier": "ZQ-7742-ALPHA",
+    "statement_period": "Oct 2026",
+    "currency": "INR"
+  },
+  "summary": {
+    "opening_value": "1",
+    "closing_value": "26500000.00",
+    "cash_balance": "1500000.00",
+    "fees_charged": null,
+    "nav_per_unit": null
+  },
+  "holdings": [
+    {
+      "security_name": "Quantum Tech ETF Class",
+      "isin": "INE999Q01011",
+      "quantity": "5000",
+      "cost": "1800.00",
+      "market_value": "10000000.00",
+      "weight": null
+    },
+    {
+      "security_name": "Zephyr Alpha Strategy",
+      "isin": "INE999Q01022",
+      "quantity": "2500",
+      "cost": "3500.00",
+      "market_value": "10000000.00",
+      "weight": null
+    },
+    {
+      "security_name": "Liquid BeES Treasury",
+      "isin": "INE999Q01033",
+      "quantity": "5000",
+      "cost": "1000.00",
+      "market_value": "5000000.00",
+      "weight": null
+    }
+  ],
+  "transactions": [],
+  "provenance": {
+    "source_hash": "0fe904efaa77a44df0a97ae44223023f8ad133bb2fd6c0801b2d47dcd56232b3",
+    "layout_fingerprint": "3f5e572a089f410462a5695c04587e26a7e1b3b35388bb5d3d0c4a7d55ffc9bd",
+    "artifact_version": "1.0"
+  },
+  "validation": {
+    "status": "PASS",
+    "details": "Portfolio sum matched (Diff: 0.00) | No NAV per unit provided."
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "statement_id": "STMT-b73c13dc",
+  "context": {
+    "provider_name": "AlphaWealth",
+    "strategy_name": "Consolidated Portfolio",
+    "client_identifier": "CLIENT-A01",
+    "statement_period": "Oct 2026",
+    "currency": "INR"
+  },
+  "summary": {
+    "opening_value": "1000000.00",
+    "closing_value": "1050000.00",
+    "cash_balance": "50000.00",
+    "fees_charged": null,
+    "nav_per_unit": null
+  },
+  "holdings": [
+    {
+      "security_name": "Reliance Ind",
+      "isin": "INE002A01018",
+      "quantity": "200",
+      "cost": "2500.00",
+      "market_value": "510000.00",
+      "weight": null
+    },
+    {
+      "security_name": "HDFC Bank",
+      "isin": "INE040A01034",
+      "quantity": "300",
+      "cost": "1500.00",
+      "market_value": "490000.00",
+      "weight": null
+    }
+  ],
+  "transactions": [],
+  "provenance": {
+    "source_hash": "b73c13dcddf62e6a02059da441857a4239de294dbb3d43742e2146cb2b052f50",
+    "layout_fingerprint": "936ba504dac4aee8301e21419b23e6efc8bc0960e79a293ffd73fade7c31cbe8",
+    "artifact_version": "1.0"
+  },
+  "validation": {
+    "status": "PASS",
+    "details": "Portfolio sum matched (Diff: 0.00) | No NAV per unit provided."
+  }
+}

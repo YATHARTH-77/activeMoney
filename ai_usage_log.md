@@ -190,3 +190,7 @@ Every line of AI-assisted code was verified against four independent quality gat
    * Confirmed via HTTP request logging that re-running `python scripts/parse.py --input data/staging` against populated `artifacts.db` makes **0 external API calls** to Groq or Gemini and completes in `< 0.40 seconds`.
 4. **Static Analysis & Linting (`ruff check .`):**
    * Enforced PEP 8 compliance, unused-import removal, and clean module boundaries across `src/`, `scripts/`, and `tests/`.
+
+
+   AI chat history - https://share.gemini.google/m4verEfjo2rL
+   

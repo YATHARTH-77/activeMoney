@@ -1,0 +1,109 @@
+{
+  "statement_id": "STMT-dabe1b69",
+  "context": {
+    "provider_name": "TITAN WEALTH ENTERPRISES CONSOLIDATED STATEMENT",
+    "strategy_name": "Consolidated Portfolio",
+    "client_identifier": "SUMMARY",
+    "statement_period": "Oct 2026",
+    "currency": "INR"
+  },
+  "summary": {
+    "opening_value": "50000000.00",
+    "closing_value": "56500000.00",
+    "cash_balance": "1500000.00",
+    "fees_charged": null,
+    "nav_per_unit": null
+  },
+  "holdings": [
+    {
+      "security_name": "Titan Equity Fund 1",
+      "isin": "INE000T01001",
+      "quantity": "1000",
+      "cost": "0",
+      "market_value": "5000000.00",
+      "weight": null
+    },
+    {
+      "security_name": "Titan Equity Fund 2",
+      "isin": "INE000T01002",
+      "quantity": "1000",
+      "cost": "0",
+      "market_value": "5000000.00",
+      "weight": null
+    },
+    {
+      "security_name": "Titan Equity Fund 3",
+      "isin": "INE000T01003",
+      "quantity": "1000",
+      "cost": "0",
+      "market_value": "5000000.00",
+      "weight": null
+    },
+    {
+      "security_name": "Titan Equity Fund 4",
+      "isin": "INE000T01004",
+      "quantity": "1000",
+      "cost": "0",
+      "market_value": "5000000.00",
+      "weight": null
+    },
+    {
+      "security_name": "Titan Debt Fund 5",
+      "isin": "INE000T02005",
+      "quantity": "2000",
+      "cost": "0",
+      "market_value": "6000000.00",
+      "weight": null
+    },
+    {
+      "security_name": "Titan Debt Fund 6",
+      "isin": "INE000T02006",
+      "quantity": "2000",
+      "cost": "0",
+      "market_value": "6000000.00",
+      "weight": null
+    },
+    {
+      "security_name": "Titan Debt Fund 7",
+      "isin": "INE000T02007",
+      "quantity": "2000",
+      "cost": "0",
+      "market_value": "6000000.00",
+      "weight": null
+    },
+    {
+      "security_name": "Titan Debt Fund 8",
+      "isin": "INE000T02008",
+      "quantity": "2000",
+      "cost": "0",
+      "market_value": "6000000.00",
+      "weight": null
+    },
+    {
+      "security_name": "Titan Debt Fund 9",
+      "isin": "INE000T02009",
+      "quantity": "2000",
+      "cost": "0",
+      "market_value": "6000000.00",
+      "weight": null
+    },
+    {
+      "security_name": "Titan Gold ETF 10",
+      "isin": "INE000T03010",
+      "quantity": "5000",
+      "cost": "0",
+      "market_value": "5000000.00",
+      "weight": null
+    }
+  ],
+  "transactions": [],
+  "provenance": {
+    "source_hash": "dabe1b6952b4b38bd14351a7f4928d3b20571bf3a2ef97bc4d9828b19258ce8f",
+    "layout_fingerprint": "937cf859a91d94e8f413f4d75649ff75ef4beb4dbe37be967dbacd007886cc92",
+    "artifact_version": "1.0"
+  },
+  "validation": {
+    "status": "PASS",
+    "details": "Portfolio sum matched (Diff: 0.00) | No NAV per unit provided."
+  }
+}
