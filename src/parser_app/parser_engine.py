@@ -102,7 +102,6 @@ class DeterministicParser:
             else:
                 target_key = rule.name
 
-            # Strip brackets or coordinates from LLM-generated label
             clean_label = re.sub(r"\[P\d+[^\]]*\]", "", rule.label).strip()
             if not clean_label:
                 continue
@@ -126,10 +125,10 @@ class DeterministicParser:
                         except InvalidOperation:
                             continue
 
-        # Fallback regular expression scans if summary rules did not extract values
+        # Fallback regex scans if summary rules missed a field
         if values["closing_value"] == "0":
             close_match = re.search(
-                r"(?:closing|portfolio\s+value|net\s+value|closing\s+val)[\s:]*([0-9,]+(?:\.[0-9]+)?)",
+                r"(?:closing(?:\s+portfolio)?(?:\s+value|\s+val)?|net\s+closing\s+value|portfolio\s+value)[^0-9\n]*([0-9,]+(?:\.[0-9]+)?)",
                 full_text,
                 re.IGNORECASE,
             )
@@ -138,7 +137,7 @@ class DeterministicParser:
 
         if values["cash_balance"] == "0":
             cash_match = re.search(
-                r"(?:cash(?:\s+balance)?|settled\s+cash|bank\s+balance)[\s:]*([0-9,]+(?:\.[0-9]+)?)",
+                r"(?:settled\s+cash(?:\s+balance)?|cash(?:\s+balance)?|bank\s+balance)[^0-9\n]*([0-9,]+(?:\.[0-9]+)?)",
                 full_text,
                 re.IGNORECASE,
             )
@@ -147,7 +146,7 @@ class DeterministicParser:
 
         if values["opening_value"] == "0":
             open_match = re.search(
-                r"(?:opening(?:\s+value|\s+balance)?)[\s:]*([0-9,]+(?:\.[0-9]+)?)",
+                r"(?:opening(?:\s+portfolio)?(?:\s+value|\s+balance)?)[^0-9\n]*([0-9,]+(?:\.[0-9]+)?)",
                 full_text,
                 re.IGNORECASE,
             )
@@ -162,13 +161,114 @@ class DeterministicParser:
             nav_per_unit=values.get("nav_per_unit"),
         )
 
+    def _parse_row_tokens_fallback(self, raw_line: str) -> Optional[Holding]:
+        """
+        Deterministic structural fallback for rows with pipe delimiters ('|')
+        or standard ISIN-anchored tabular tokens when LLM X-bounds shift slightly.
+        """
+        clean_line = raw_line.strip()
+        if not clean_line:
+            return None
+
+        # 1. Pipe-delimited format: e.g. "Reliance Ind | INE002A01018 | 200 | 2500.00 | 510000.00 | 48.57"
+        if "|" in clean_line:
+            parts = [p.strip() for p in clean_line.split("|") if p.strip()]
+            if len(parts) >= 3:
+                sec_name = parts[0]
+                if any(
+                    k in sec_name.lower()
+                    for k in ["security", "opening", "closing", "management fee", "client"]
+                ):
+                    return None
+
+                isin_val = None
+                numeric_vals: List[Decimal] = []
+
+                for p in parts[1:]:
+                    if re.match(r"^[A-Z]{2}[A-Z0-9]{8,12}$", p):
+                        isin_val = p
+                    else:
+                        num_clean = re.sub(r"[^\d.-]", "", p)
+                        try:
+                            numeric_vals.append(Decimal(num_clean))
+                        except InvalidOperation:
+                            continue
+
+                if len(sec_name) >= 2 and numeric_vals:
+                    qty = numeric_vals[0] if len(numeric_vals) >= 1 else Decimal("0")
+                    if len(numeric_vals) == 2:
+                        # [Qty, MarketValue]
+                        cost = Decimal("0")
+                        m_val = numeric_vals[1]
+                        weight = None
+                    elif len(numeric_vals) == 3:
+                        # [Qty, Cost, MarketValue]
+                        cost = numeric_vals[1]
+                        m_val = numeric_vals[2]
+                        weight = None
+                    else:
+                        # [Qty, Cost, MarketValue, Weight/PL]
+                        cost = numeric_vals[1]
+                        m_val = numeric_vals[2]
+                        weight = numeric_vals[3]
+
+                    if m_val > 0:
+                        return Holding(
+                            security_name=sec_name,
+                            isin=isin_val,
+                            quantity=qty,
+                            cost=cost,
+                            market_value=m_val,
+                            weight=weight,
+                        )
+
+        # 2. ISIN-Anchored Token Stream Fallback:
+        # Matches: "<Security Name> <ISIN: INE...> <Qty> [<Cost>] <MarketValue> [<Weight/PL>]"
+        isin_match = re.search(r"\b([A-Z]{2}[A-Z0-9]{9,10})\b", clean_line)
+        if isin_match:
+            sec_name = clean_line[: isin_match.start()].replace("|", "").strip()
+            isin_val = isin_match.group(1).strip()
+            rest = clean_line[isin_match.end() :].replace("|", " ").strip()
+
+            num_tokens = re.findall(r"[-+]?\d+(?:,\d{3})*(?:\.\d+)?", rest)
+            decimals = []
+            for t in num_tokens:
+                try:
+                    decimals.append(Decimal(t.replace(",", "")))
+                except InvalidOperation:
+                    continue
+
+            if len(sec_name) >= 2 and len(decimals) >= 2:
+                qty = decimals[0]
+                if len(decimals) == 2:
+                    cost = Decimal("0")
+                    m_val = decimals[1]
+                else:
+                    cost = decimals[1]
+                    m_val = decimals[2]
+
+                if m_val > 0:
+                    return Holding(
+                        security_name=sec_name,
+                        isin=isin_val,
+                        quantity=qty,
+                        cost=cost,
+                        market_value=m_val,
+                        weight=None,
+                    )
+
+        return None
+
     def _extract_holdings(self, pdf_pages: List[Dict[str, Any]]) -> List[Holding]:
         table_rule: Optional[TableRule] = self.artifact.holdings_table
-        if not table_rule or not table_rule.columns:
-            return []
+        columns = table_rule.columns if table_rule and table_rule.columns else []
 
         holdings: List[Holding] = []
-        clean_anchor = re.sub(r"\[P\d+[^\]]*\]", "", table_rule.start_anchor).strip().lower()
+        clean_anchor = (
+            re.sub(r"\[P\d+[^\]]*\]", "", table_rule.start_anchor).strip().lower()
+            if table_rule and table_rule.start_anchor
+            else ""
+        )
         state = "SEARCHING"
 
         terminal_sections = [
@@ -210,9 +310,9 @@ class DeterministicParser:
 
             for top in sorted(lines_dict.keys()):
                 line_words = sorted(lines_dict[top], key=lambda item: item["x0"])
-                line_text = " ".join(w["text"] for w in line_words).strip().lower()
+                raw_line_str = " ".join(w["text"] for w in line_words).strip()
+                line_text = raw_line_str.lower()
 
-                # Table entry detection: anchor match OR standard table header row
                 is_header_row = (
                     ("security" in line_text or "scrip" in line_text or "particular" in line_text or "holding" in line_text)
                     and ("value" in line_text or "market" in line_text or "amount" in line_text or "isin" in line_text or "qty" in line_text)
@@ -231,7 +331,6 @@ class DeterministicParser:
                         state = "ACTIVE_TABLE"
                     continue
 
-                # Header and continuation row suppression
                 if is_header_row or "continued" in line_text or "holdings report" in line_text:
                     continue
 
@@ -246,64 +345,63 @@ class DeterministicParser:
                 ):
                     continue
 
-                # Center-of-Mass Geometric Column Projection
-                row_data: Dict[str, str] = {}
-                sorted_cols = sorted(table_rule.columns, key=lambda c: c.x_start)
+                # STAGE 1: Center-of-Mass Geometric Column Projection
+                extracted_holding: Optional[Holding] = None
 
-                for idx, col in enumerate(sorted_cols):
-                    col_words = []
-                    c_start = col.x_start - 15.0
-                    c_end = col.x_end + (35.0 if idx == len(sorted_cols) - 1 else 15.0)
+                if columns and "|" not in raw_line_str:
+                    row_data: Dict[str, str] = {}
+                    sorted_cols = sorted(columns, key=lambda c: c.x_start)
 
-                    for w in line_words:
-                        mid_x = (w["x0"] + w["x1"]) / 2.0
-                        if c_start <= mid_x <= c_end:
-                            col_words.append(w["text"])
+                    for idx, col in enumerate(sorted_cols):
+                        col_words = []
+                        c_start = col.x_start - 15.0
+                        c_end = col.x_end + (35.0 if idx == len(sorted_cols) - 1 else 15.0)
 
-                    row_data[col.name] = " ".join(col_words).strip()
+                        for w in line_words:
+                            if w["text"] == "|":
+                                continue
+                            mid_x = (w["x0"] + w["x1"]) / 2.0
+                            if c_start <= mid_x <= c_end:
+                                col_words.append(w["text"])
 
-                # Fuzzy column resolution helper
-                def find_cell(synonyms: List[str]) -> str:
-                    for s in synonyms:
-                        for col_name, val in row_data.items():
-                            norm_col = col_name.lower().replace(" ", "_")
-                            if s in norm_col:
-                                return val
-                    return ""
+                        row_data[col.name] = " ".join(col_words).strip()
 
-                sec_name = find_cell(["security", "name", "desc", "scrip", "particular", "holding", "company"])
-                isin_val = find_cell(["isin", "code"])
-                qty_raw = find_cell(["quantity", "qty", "units", "shares"])
-                cost_raw = find_cell(["cost", "price", "avg"])
-                market_val_raw = find_cell(["market_value", "market", "value", "val", "amount", "worth"])
+                    def find_cell(synonyms: List[str]) -> str:
+                        for s in synonyms:
+                            for col_name, val in row_data.items():
+                                norm_col = col_name.lower().replace(" ", "_")
+                                if s in norm_col and val.strip():
+                                    return val.strip()
+                        return ""
 
-                # If specific column names were not resolved, use position fallback
-                if not sec_name and sorted_cols:
-                    sec_name = row_data.get(sorted_cols[0].name, "")
-                if not market_val_raw and len(sorted_cols) > 1:
-                    market_val_raw = row_data.get(sorted_cols[-1].name, "")
+                    sec_name = find_cell(["security", "name", "desc", "scrip", "particular", "holding", "company"])
+                    isin_val = find_cell(["isin", "code"])
+                    qty_raw = find_cell(["quantity", "qty", "units", "shares"])
+                    cost_raw = find_cell(["cost", "price", "avg"])
+                    market_val_raw = find_cell(["market_value", "market", "value", "val", "amount", "worth"])
 
-                market_val_clean = re.sub(r"[^\d.-]", "", market_val_raw)
-                qty_clean = re.sub(r"[^\d.-]", "", qty_raw) or "0"
-                cost_clean = re.sub(r"[^\d.-]", "", cost_raw) or "0"
+                    if not sec_name and sorted_cols:
+                        sec_name = row_data.get(sorted_cols[0].name, "")
 
-                # Row validation: must not be a summary line or disclaimer
-                summary_terms = ["total", "closing", "opening", "balance", "subtotal", "sub-total", "net worth", "end of"]
-                is_summary_line = any(term in sec_name.lower() for term in summary_terms)
-                is_disclaimer_line = any(term in sec_name.lower() for term in ["disclaimer", "statement", "confidential", "risk"])
+                    market_val_clean = re.sub(r"[^\d.-]", "", market_val_raw)
+                    qty_clean = re.sub(r"[^\d.-]", "", qty_raw) or "0"
+                    cost_clean = re.sub(r"[^\d.-]", "", cost_raw) or "0"
 
-                if (
-                    len(sec_name) >= 3
-                    and len(sec_name) <= 65
-                    and not sec_name.replace(".", "").isdigit()
-                    and not is_summary_line
-                    and not is_disclaimer_line
-                ):
-                    try:
-                        m_val = Decimal(market_val_clean)
-                        if m_val > 0:
-                            holdings.append(
-                                Holding(
+                    summary_terms = ["total", "closing", "opening", "balance", "subtotal", "sub-total", "net worth", "end of"]
+                    is_summary_line = any(term in sec_name.lower() for term in summary_terms)
+                    is_disclaimer_line = any(term in sec_name.lower() for term in ["disclaimer", "statement", "confidential", "risk"])
+
+                    if (
+                        len(sec_name) >= 2
+                        and len(sec_name) <= 85
+                        and not sec_name.replace(".", "").isdigit()
+                        and not is_summary_line
+                        and not is_disclaimer_line
+                    ):
+                        try:
+                            m_val = Decimal(market_val_clean)
+                            if m_val > 0:
+                                extracted_holding = Holding(
                                     security_name=sec_name,
                                     isin=isin_val if isin_val else None,
                                     quantity=Decimal(qty_clean),
@@ -311,9 +409,15 @@ class DeterministicParser:
                                     market_value=m_val,
                                     weight=None,
                                 )
-                            )
-                    except (InvalidOperation, ValueError):
-                        continue
+                        except (InvalidOperation, ValueError):
+                            extracted_holding = None
+
+                # STAGE 2: Pipe-Delimited & ISIN-Anchored Structural Fallback
+                if extracted_holding is None:
+                    extracted_holding = self._parse_row_tokens_fallback(raw_line_str)
+
+                if extracted_holding is not None:
+                    holdings.append(extracted_holding)
 
         return holdings
 
